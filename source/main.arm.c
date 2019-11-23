@@ -350,6 +350,7 @@ static void printArt() {
 }
 
 static int aCustomGameProfileConfig[6];
+static int nTiming;
 static int nGameProfile;
 static bool hasMotor;
 static int nSiCmdLen;
@@ -364,15 +365,16 @@ static void configureCustomProfile() {
 		aCustomGameProfileConfig[i] = aDefaultProfileConfig[i];
 	}
 	int cursorPosition = 0;
+	bool validated = false;
 	printProfileBuilder(cursorPosition, aCustomGameProfileConfig);
-	while (true) {
+	while (!validated) {
 		VBlankIntrWait();
 		bool refreshed = false;
 		unsigned gbaInput = ~REG_KEYINPUT;
 		if ((gbaInput & KEY_START) || (gbaInput & KEY_A)) {
 			// Validate
 			if (isGameProfileValid(aCustomGameProfileConfig)) {
-				break;
+				validated = true;
 			}
 		} else if (gbaInput & KEY_SELECT) {
 			// Set default mapping
@@ -412,15 +414,56 @@ static void configureCustomProfile() {
 	}
 }
 
-static int profileSelect() {
-	irqInit();
-	irqEnable(IRQ_VBLANK);
-	consoleSetup(1);
-	if (getPressedButtonsNumber() > 0) {
-		showHeader();
-		printf("\nPlease release all buttons to\ncontinue...");
+static void printTimingSelect(int nTiming)
+{
+	showHeader();
+	printf("\n======= Joybus config =======\n\n");
+	printf("\nCurrent timing : ");
+	printf("\n> %d (%.2f microseconds)", nTiming, 0.05959 * nTiming);
+	printf("\n\n\nUP: +1 (slower)");
+	printf("\nDOWN: -1 (faster)");
+	printf("\n\nSELECT: Set default");
+	printf("\nSTART/A: Validate");
+}
+
+static int timingSelect()
+{
+	int nTiming = 67;
+	bool validated = false;
+	printTimingSelect(nTiming);
+	while (!validated) {
+		VBlankIntrWait();
+		bool refreshed = false;
+		unsigned buttons = ~REG_KEYINPUT;
+		if ((buttons & KEY_START) || (buttons & KEY_A)) {
+			validated = true;
+		} else if (buttons & KEY_SELECT) {
+			nTiming = 67;
+			refreshed = true;
+		} else if (buttons & KEY_UP) {
+			if (nTiming < 100) {
+				nTiming++;
+				refreshed = true;
+			}
+		} else if (buttons & KEY_DOWN) {
+			if (nTiming > 50) {
+				nTiming--;
+				refreshed = true;
+			}
+		}
+		if (refreshed)
+		{
+			printTimingSelect(nTiming);
+			inputReleasedWait();
+		}
 	}
+	nTiming = - nTiming;
+	printf("\n\nTimer set to : %d", nTiming);
 	inputReleasedWait();
+	return nTiming;
+}
+
+static int profileSelect() {
 	showHeader();
 	printf("\nChoose a game profile :");
 	printf("\nSELECT: Make custom profile");
@@ -466,6 +509,15 @@ static int profileSelect() {
 
 int IWRAM_CODE main(void)
 {
+	irqInit();
+	irqEnable(IRQ_VBLANK);
+	consoleSetup(1);
+	if (getPressedButtonsNumber() > 0) {
+		showHeader();
+		printf("\nPlease release all buttons to\ncontinue...");
+	}
+	inputReleasedWait();
+	nTiming = timingSelect();
 	nGameProfile = profileSelect();
 	
 	RegisterRamReset(RESET_ALL_REG);
@@ -483,7 +535,7 @@ int IWRAM_CODE main(void)
 
 	REG_RCNT = R_GPIO | GPIO_IRQ | GPIO_SO_IO | GPIO_SO;
 
-	REG_TM0CNT_L = -67;
+	REG_TM0CNT_L = nTiming;
 	REG_TM1CNT_H = TIMER_START | TIMER_IRQ | TIMER_COUNT;
 	REG_TM0CNT_H = TIMER_START;
 
