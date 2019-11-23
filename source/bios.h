@@ -46,4 +46,8 @@ static inline void SoundBias(uint32_t bias)
 	asm volatile("svc 0x190000" :: "r" (r0) : "r1", "r2", "r3");
 }
 
+static inline void VBlankIntrWait() {
+	SystemCall(5);
+}
+
 #endif /* GBA_BIOS_H */

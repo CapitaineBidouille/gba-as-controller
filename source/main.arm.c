@@ -1,17 +1,59 @@
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <gba_console.h>
 #include <gba_dma.h>
 #include <gba_input.h>
 #include <gba_interrupt.h>
 #include <gba_sio.h>
 #include <gba_timers.h>
+#include <gba_video.h>
 #include "bios.h"
 
 #define ROM           ((int16_t *)0x08000000)
 #define ROM_GPIODATA *((int16_t *)0x080000C4)
 #define ROM_GPIODIR  *((int16_t *)0x080000C6)
 #define ROM_GPIOCNT  *((int16_t *)0x080000C8)
+#define GPIO_IRQ	0x0100	//! Interrupt on SI.
 
-//#define ANALOG
+enum {
+	ID_GBAKEY_A = 0,
+	ID_GBAKEY_B = 1,
+	ID_GBAKEY_START = 2,
+	ID_GBAKEY_SELECT = 3,
+	ID_GBAKEY_L = 4,
+	ID_GBAKEY_R = 5,
+	ID_GBAKEY_UP = 6,
+	ID_GBAKEY_DOWN = 7,
+	ID_GBAKEY_LEFT = 8,
+	ID_GBAKEY_RIGHT = 9,
+};
+
+enum {
+	ID_GCPAD_A = 0,
+	ID_GCPAD_B = 1,
+	ID_GCPAD_X = 2,
+	ID_GCPAD_Y = 3,
+	ID_GCPAD_START = 4,
+	ID_GCPAD_Z = 5,
+	ID_GCPAD_L = 6,
+	ID_GCPAD_R = 7,
+	ID_GCPAD_UP = 8,
+	ID_GCPAD_DOWN = 9,
+	ID_GCPAD_LEFT = 10,
+	ID_GCPAD_RIGHT = 11,
+};
+
+static char aGameProfilesNames[6][30] = {
+	"Custom profile",
+	"Default",
+	"Super Smash Ultimate",
+	"Mario Kart Double Dash",
+	"Mario Kart 8 Deluxe",
+	"New Super Mario Bros"
+};
+
+static int aDefaultProfileConfig[6] = {ID_GCPAD_A, ID_GCPAD_B, ID_GCPAD_START, ID_GCPAD_Z, ID_GCPAD_L, ID_GCPAD_R};
 
 enum {
 	CMD_ID = 0x00,
@@ -161,12 +203,280 @@ static void set_motor(bool enable)
 	}
 }
 
+static char aGbaKeys[10][7] = {
+	"A",
+	"B",
+	"START",
+	"SELECT",
+	"L",
+	"R",
+	"UP",
+	"DOWN",
+	"LEFT",
+	"RIGHT"
+};
+
+static char aGcPadButtons[12][6] = {
+	"A",
+	"B",
+	"X",
+	"Y",
+	"START",
+	"Z",
+	"L",
+	"R",
+	"UP",
+	"DOWN",
+	"LEFT",
+	"RIGHT",
+};
+
 void SISetResponse(const void *buf, unsigned bits);
 int SIGetCommand(void *buf, unsigned bits);
 
+void consoleSetup(int phase) {
+	consoleInit(0, 4, 0, NULL, 0, 15);
+	if (phase == 1) {
+		// Black background
+		BG_COLORS[0] = RGB8(0, 0, 0);
+	} else if (phase == 2) {
+		// Indigo background (same color as a gc controller)
+		BG_COLORS[0] = RGB8(56, 67, 141);
+	}
+	BG_COLORS[241] = RGB5(31, 31, 31); // Text color (white)
+	SetMode(MODE_0 | BG0_ON);
+}
+
+static bool isGameProfileValid(int* aGameProfileConfig) {
+	bool valid = true;
+	int nGbaKey = 0;
+	while (nGbaKey < 6 && valid) {
+		int nRelatedGcPadButton = aGameProfileConfig[nGbaKey];
+		int i = nGbaKey + 1;
+		while (i < 6 && valid) {
+			if (nRelatedGcPadButton == aGameProfileConfig[i]) {
+				valid = false;
+			} else {
+				i++;
+			}
+		}
+		nGbaKey++;
+	}
+	return valid;
+}
+
+static void printProfileBuilder(int cursorPosition, int* aGameProfileConfig) {
+	char selectedCursor[] = " <==";
+	printf("\x1b[2J"); // clear the screen
+	printf("\n=== Game profile builder ===\n\n");
+	printf("\n   GBA Keys   |   NGC Pad");
+	printf("\n______________|_____________");
+	printf("\n              |\n");
+	for (int i = 0; i < 6; i++) {
+		char* sGbaKey = aGbaKeys[i];
+		char sBlank[11];
+		strcpy(sBlank, "");
+		for (int j = 0; j < 11 - strlen(sGbaKey); j++) {
+			strcat(sBlank, " ");
+		}
+		printf("   %s%s|   %s%s\n", sGbaKey, sBlank, aGcPadButtons[aGameProfileConfig[i]], i == cursorPosition ? selectedCursor : "");
+	}
+	printf("\n\nUP/DOWN: Navigate");
+	printf("\nLEFT/RIGHT: Change mapping");
+	printf("\n\nSELECT: Set default");
+	if (isGameProfileValid(aGameProfileConfig)) {
+		printf("\nSTART/A: Validate");
+	} else {
+		printf("\nError : invalid game profile");
+	}
+}
+
+static void showHeader() {
+	printf("\x1b[2J"); // clear the screen
+	printf("\n=== GBA AS NGC CONTROLLER ===");
+	printf("\nCreated by Extremscorner.org");
+	printf("\nModified by Azlino (23-11-19)\n");
+}
+
+static int getPressedButtonsNumber() {
+	unsigned buttons = ~REG_KEYINPUT;
+	int nPressedButtons = 0;
+	if (buttons & KEY_RIGHT) {
+		nPressedButtons++;
+	} else if (buttons & KEY_LEFT) {
+		nPressedButtons++;
+	}
+	if (buttons & KEY_UP) {
+		nPressedButtons++;
+	} else if (buttons & KEY_DOWN) {
+		nPressedButtons++;
+	}
+	if (buttons & KEY_A) {
+		nPressedButtons++;
+	}
+	if (buttons & KEY_B) {
+		nPressedButtons++;
+	}
+	if (buttons & KEY_L) {
+		nPressedButtons++;
+	}
+	if (buttons & KEY_R) {
+		nPressedButtons++;
+	}
+	if (buttons & KEY_START) {
+		nPressedButtons++;
+	}
+	if (buttons & KEY_SELECT) {
+		nPressedButtons++;
+	}
+	return nPressedButtons;
+}
+
+static void inputReleasedWait() {
+	while (getPressedButtonsNumber() > 0) {
+		VBlankIntrWait();
+	}
+}
+
+static void printArt() {
+ 	printf("\n\n           ___------__");
+	printf("\n     |\\__-- /\\       _-");
+	printf("\n     |/    __      -");
+	printf("\n     //\\  /  \\    /__");
+	printf("\n     |  o|  0|__     --_");
+	printf("\n     \\\\____-- __ \\   ___-");
+	printf("\n     (@@    __/  / /_");
+	printf("\n        -_____---   --_\n");
+}
+
+static int aCustomGameProfileConfig[6];
+static int nGameProfile;
+static bool hasMotor;
+static int nSiCmdLen;
+static int nProfileIterationGbaKey;
+static int nProfileIterationGbaButtonState;
+static unsigned gbaInput;
+
+static void configureCustomProfile() {
+	inputReleasedWait();
+	// Entering game profile builder
+	for (int i = 0; i < 6; i++) {
+		aCustomGameProfileConfig[i] = aDefaultProfileConfig[i];
+	}
+	int cursorPosition = 0;
+	printProfileBuilder(cursorPosition, aCustomGameProfileConfig);
+	while (true) {
+		VBlankIntrWait();
+		bool refreshed = false;
+		unsigned gbaInput = ~REG_KEYINPUT;
+		if ((gbaInput & KEY_START) || (gbaInput & KEY_A)) {
+			// Validate
+			if (isGameProfileValid(aCustomGameProfileConfig)) {
+				break;
+			}
+		} else if (gbaInput & KEY_SELECT) {
+			// Set default mapping
+			for (int i = 0; i < 6; i++) {
+				aCustomGameProfileConfig[i] = aDefaultProfileConfig[i];
+			}
+			refreshed = true;
+		} else if (gbaInput & KEY_UP) {
+			if (cursorPosition > 0) {
+				cursorPosition--;
+				refreshed = true;
+			}
+		} else if (gbaInput & KEY_DOWN) {
+			if (cursorPosition < 5) {
+				cursorPosition++;
+				refreshed = true;
+			}
+		} else if (gbaInput & KEY_RIGHT) {
+			if (aCustomGameProfileConfig[cursorPosition] >= 11) {
+				aCustomGameProfileConfig[cursorPosition] = 0;
+			} else {
+				aCustomGameProfileConfig[cursorPosition]++;
+			}
+			refreshed = true;
+		} else if (gbaInput & KEY_LEFT) {
+			if (aCustomGameProfileConfig[cursorPosition] == 0) {
+				aCustomGameProfileConfig[cursorPosition] = 11;
+			} else {
+				aCustomGameProfileConfig[cursorPosition]--;
+			}
+			refreshed = true;
+		}
+		if (refreshed) {
+			printProfileBuilder(cursorPosition, aCustomGameProfileConfig);
+			inputReleasedWait();
+		}
+	}
+}
+
+static int profileSelect() {
+	irqInit();
+	irqEnable(IRQ_VBLANK);
+	consoleSetup(1);
+	if (getPressedButtonsNumber() > 0) {
+		showHeader();
+		printf("\nPlease release all buttons to\ncontinue...");
+	}
+	inputReleasedWait();
+	showHeader();
+	printf("\nChoose a game profile :");
+	printf("\nSELECT: Make custom profile");
+	printf("\nA: %s", aGameProfilesNames[1]);
+	printf("\nB: %s", aGameProfilesNames[2]);
+	printf("\nL: %s", aGameProfilesNames[3]);
+	printf("\nR: %s", aGameProfilesNames[4]);
+	printf("\nUP: %s", aGameProfilesNames[5]);
+	int nGameProfile = -1;
+	while (nGameProfile == -1) {
+		VBlankIntrWait();
+		unsigned buttons = ~REG_KEYINPUT;
+		if (buttons & KEY_SELECT) {
+			nGameProfile = 0; // Custom
+		} else if (buttons & KEY_A) {
+			nGameProfile = 1; // Default
+		} else if (buttons & KEY_B) {
+			nGameProfile = 2; // Super Smash Ultimate
+		} else if (buttons & KEY_START) {
+			nGameProfile = -1;
+		} else if (buttons & KEY_L) {
+			nGameProfile = 3; // Mario Kart Double Dash
+		} else if (buttons & KEY_R) {
+			nGameProfile = 4; // Mario Kart 8 Deluxe
+		} else if (buttons & KEY_UP) {
+			nGameProfile = 5; // New Super Mario Bros
+		} else if (buttons & KEY_DOWN) {
+			nGameProfile = -1;
+		} else if (buttons & KEY_LEFT) {
+			nGameProfile = -1;
+		} else if (buttons & KEY_RIGHT) {
+			nGameProfile = -1;
+		}
+	}
+	if (nGameProfile == 0) {
+		configureCustomProfile();
+	}
+	hasMotor = has_motor(); // Define motor
+	printf("\n\nSelected game profile :\n> %s", aGameProfilesNames[nGameProfile]);
+	inputReleasedWait();
+	return nGameProfile;
+}
+
 int IWRAM_CODE main(void)
 {
+	nGameProfile = profileSelect();
+	
 	RegisterRamReset(RESET_ALL_REG);
+
+	consoleSetup(2);
+	showHeader();
+	printf("\nGame profile :");
+	printf("\n> %s", aGameProfilesNames[nGameProfile]);
+	printf("\nRumble : %s", hasMotor ? "Yes" : "No ");
+	printArt();
+	printf("\n\nPush A+B+SELECT+START to reset");
 
 	REG_IE = IRQ_SERIAL | IRQ_TIMER2 | IRQ_TIMER1 | IRQ_TIMER0;
 	REG_IF = REG_IF;
@@ -181,114 +491,202 @@ int IWRAM_CODE main(void)
 	Halt();
 
 	while (true) {
-		int length = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
-		if (length < 9) continue;
+		nSiCmdLen = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
+		if (nSiCmdLen < 9) continue;
 
-		unsigned buttons     = ~REG_KEYINPUT;
-		origin.buttons.a     = !!(buttons & KEY_A);
-		origin.buttons.b     = !!(buttons & KEY_B);
-		origin.buttons.z     = !!(buttons & KEY_SELECT);
-		origin.buttons.start = !!(buttons & KEY_START);
-		#ifndef ANALOG
-		origin.buttons.right = !!(buttons & KEY_RIGHT);
-		origin.buttons.left  = !!(buttons & KEY_LEFT);
-		origin.buttons.up    = !!(buttons & KEY_UP);
-		origin.buttons.down  = !!(buttons & KEY_DOWN);
-		#endif
-		origin.buttons.r     = !!(buttons & KEY_R);
-		origin.buttons.l     = !!(buttons & KEY_L);
-
+		gbaInput = ~REG_KEYINPUT;
+		if (gbaInput == -1009) break; // Softreset A B START SELECT
+		switch (nGameProfile) {
+			case 1: // Default
+			origin.buttons.a     = !!(gbaInput & KEY_A);
+			origin.buttons.b     = !!(gbaInput & KEY_B);
+			origin.buttons.start = !!(gbaInput & KEY_START);
+			origin.buttons.z     = !!(gbaInput & KEY_SELECT);
+			origin.buttons.l     = !!(gbaInput & KEY_L);
+			origin.buttons.r     = !!(gbaInput & KEY_R);
+			break;
+			case 2: // Super Smash Ultimate
+			origin.buttons.a     = !!(gbaInput & KEY_A);
+			origin.buttons.b     = !!(gbaInput & KEY_B);
+			origin.buttons.start = !!(gbaInput & KEY_START);
+			origin.buttons.x     = !!(gbaInput & KEY_SELECT);
+			origin.buttons.l     = !!(gbaInput & KEY_L);
+			origin.buttons.z     = !!(gbaInput & KEY_R);
+			break;
+			case 3: // Mario Kart Double Dash
+			origin.buttons.a     = !!(gbaInput & KEY_A);
+			origin.buttons.b     = !!(gbaInput & KEY_B);
+			origin.buttons.start = !!(gbaInput & KEY_START);
+			origin.buttons.z     = !!(gbaInput & KEY_SELECT);
+			origin.buttons.x     = !!(gbaInput & KEY_L);
+			origin.buttons.r     = !!(gbaInput & KEY_R);
+			break;
+			case 4: // Mario Kart 8 Deluxe
+			origin.buttons.a     = !!(gbaInput & KEY_A);
+			origin.buttons.b     = !!(gbaInput & KEY_B);
+			origin.buttons.start = !!(gbaInput & KEY_START);
+			origin.buttons.x     = !!(gbaInput & KEY_SELECT);
+			origin.buttons.l     = !!(gbaInput & KEY_L);
+			origin.buttons.r     = !!(gbaInput & KEY_R);
+			break;
+			case 5: // New Super Mario Bros
+			origin.buttons.a     = !!(gbaInput & KEY_A);
+			origin.buttons.y     = !!(gbaInput & KEY_B);
+			origin.buttons.start = !!(gbaInput & KEY_START);
+			origin.buttons.b     = !!(gbaInput & KEY_SELECT);
+			origin.buttons.l     = !!(gbaInput & KEY_L);
+			origin.buttons.r     = !!(gbaInput & KEY_R);
+			break;
+			case 0: // Custom profile
+			nProfileIterationGbaKey = 5;
+			while (nProfileIterationGbaKey >= 0) {
+				switch (nProfileIterationGbaKey) {
+					case ID_GBAKEY_A:
+					nProfileIterationGbaButtonState = !!(gbaInput & KEY_A);
+					break;
+					case ID_GBAKEY_B:
+					nProfileIterationGbaButtonState = !!(gbaInput & KEY_B);
+					break;
+					case ID_GBAKEY_START:
+					nProfileIterationGbaButtonState = !!(gbaInput & KEY_START);
+					break;
+					case ID_GBAKEY_SELECT:
+					nProfileIterationGbaButtonState = !!(gbaInput & KEY_SELECT);
+					break;
+					case ID_GBAKEY_L:
+					nProfileIterationGbaButtonState = !!(gbaInput & KEY_L);
+					break;
+					case ID_GBAKEY_R:
+					nProfileIterationGbaButtonState = !!(gbaInput & KEY_R);
+					break;
+				}
+				switch (aCustomGameProfileConfig[nProfileIterationGbaKey]) {
+					case ID_GCPAD_A:
+					origin.buttons.a = nProfileIterationGbaButtonState;
+					break;
+					case ID_GCPAD_B:
+					origin.buttons.b = nProfileIterationGbaButtonState;
+					break;
+					case ID_GCPAD_X:
+					origin.buttons.x = nProfileIterationGbaButtonState;
+					break;
+					case ID_GCPAD_Y:
+					origin.buttons.y = nProfileIterationGbaButtonState;
+					break;
+					case ID_GCPAD_START:
+					origin.buttons.start = nProfileIterationGbaButtonState;
+					break;
+					case ID_GCPAD_Z:
+					origin.buttons.z = nProfileIterationGbaButtonState;
+					break;
+					case ID_GCPAD_L:
+					origin.buttons.l = nProfileIterationGbaButtonState;
+					break;
+					case ID_GCPAD_R:
+					origin.buttons.r = nProfileIterationGbaButtonState;
+					break;
+					case ID_GCPAD_UP:
+					origin.buttons.up = nProfileIterationGbaButtonState;
+					break;
+					case ID_GCPAD_DOWN:
+					origin.buttons.down = nProfileIterationGbaButtonState;
+					break;
+					case ID_GCPAD_LEFT:
+					origin.buttons.left = nProfileIterationGbaButtonState;
+					break;
+					case ID_GCPAD_RIGHT:
+					origin.buttons.right = nProfileIterationGbaButtonState;
+					break;
+				}
+				nProfileIterationGbaKey--;
+			}
+			break;
+		}
 		switch (buffer[0]) {
 			case CMD_RESET:
 				id.status.motor = MOTOR_STOP;
 			case CMD_ID:
-				if (length == 9) {
-					if (has_motor()) {
+				if (nSiCmdLen == 9) {
+					if (hasMotor) {
 						id.type[0] = 0x09;
 						id.type[1] = 0x00;
 					} else {
 						id.type[0] = 0x29;
 						id.type[1] = 0x00;
 					}
-
 					SISetResponse(&id, sizeof(id) * 8);
 				}
 				break;
 			case CMD_STATUS:
-				if (length == 25) {
+				if (nSiCmdLen == 25) {
 					id.status.mode  = buffer[1];
 					id.status.motor = buffer[2];
-
 					status.buttons = origin.buttons;
 					status.stick.x = origin.stick.x;
 					status.stick.y = origin.stick.y;
-					#ifdef ANALOG
-					if (buttons & KEY_RIGHT)
+					if (gbaInput & KEY_RIGHT)
 						status.stick.x = origin.stick.x + 100;
-					else if (buttons & KEY_LEFT)
+					else if (gbaInput & KEY_LEFT)
 						status.stick.x = origin.stick.x - 100;
-					if (buttons & KEY_UP)
+					if (gbaInput & KEY_UP)
 						status.stick.y = origin.stick.y + 100;
-					else if (buttons & KEY_DOWN)
+					else if (gbaInput & KEY_DOWN)
 						status.stick.y = origin.stick.y - 100;
-					#endif
-
 					switch (id.status.mode) {
 						default:
 							status.mode0.substick.x = origin.substick.x;
 							status.mode0.substick.y = origin.substick.y;
-							status.mode0.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l) >> 4;
-							status.mode0.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r) >> 4;
-							status.mode0.button.a   = (buttons & KEY_A ? 200 : origin.button.a) >> 4;
-							status.mode0.button.b   = (buttons & KEY_B ? 200 : origin.button.b) >> 4;
+							status.mode0.trigger.l  = (status.buttons.l ? 200 : origin.trigger.l) >> 4;
+							status.mode0.trigger.r  = (status.buttons.r ? 200 : origin.trigger.r) >> 4;
+							status.mode0.button.a   = (status.buttons.a ? 200 : origin.button.a) >> 4;
+							status.mode0.button.b   = (status.buttons.b ? 200 : origin.button.b) >> 4;
 							break;
 						case 1:
 							status.mode1.substick.x = origin.substick.x >> 4;
 							status.mode1.substick.y = origin.substick.y >> 4;
-							status.mode1.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l);
-							status.mode1.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r);
-							status.mode1.button.a   = (buttons & KEY_A ? 200 : origin.button.a) >> 4;
-							status.mode1.button.b   = (buttons & KEY_B ? 200 : origin.button.b) >> 4;
+							status.mode1.trigger.l  = (status.buttons.l ? 200 : origin.trigger.l);
+							status.mode1.trigger.r  = (status.buttons.r ? 200 : origin.trigger.r);
+							status.mode1.button.a   = (status.buttons.a ? 200 : origin.button.a) >> 4;
+							status.mode1.button.b   = (status.buttons.b ? 200 : origin.button.b) >> 4;
 							break;
 						case 2:
 							status.mode2.substick.x = origin.substick.x >> 4;
 							status.mode2.substick.y = origin.substick.y >> 4;
-							status.mode2.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l) >> 4;
-							status.mode2.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r) >> 4;
-							status.mode2.button.a   = (buttons & KEY_A ? 200 : origin.button.a);
-							status.mode2.button.b   = (buttons & KEY_B ? 200 : origin.button.b);
+							status.mode2.trigger.l  = (status.buttons.l ? 200 : origin.trigger.l) >> 4;
+							status.mode2.trigger.r  = (status.buttons.r ? 200 : origin.trigger.r) >> 4;
+							status.mode2.button.a   = (status.buttons.a ? 200 : origin.button.a);
+							status.mode2.button.b   = (status.buttons.b ? 200 : origin.button.b);
 							break;
 						case 3:
 							status.mode3.substick.x = origin.substick.x;
 							status.mode3.substick.y = origin.substick.y;
-							status.mode3.trigger.l  = (buttons & KEY_L ? 200 : origin.trigger.l);
-							status.mode3.trigger.r  = (buttons & KEY_R ? 200 : origin.trigger.r);
+							status.mode3.trigger.l  = (status.buttons.l ? 200 : origin.trigger.l);
+							status.mode3.trigger.r  = (status.buttons.r ? 200 : origin.trigger.r);
 							break;
 						case 4:
 							status.mode4.substick.x = origin.substick.x;
 							status.mode4.substick.y = origin.substick.y;
-							status.mode4.button.a   = (buttons & KEY_A ? 200 : origin.button.a);
-							status.mode4.button.b   = (buttons & KEY_B ? 200 : origin.button.b);
+							status.mode4.button.a   = (status.buttons.a ? 200 : origin.button.a);
+							status.mode4.button.b   = (status.buttons.b ? 200 : origin.button.b);
 							break;
 					}
-
 					SISetResponse(&status, sizeof(status) * 8);
 				}
 				break;
 			case CMD_ORIGIN:
-				if (length == 9) SISetResponse(&origin, sizeof(origin) * 8);
+				if (nSiCmdLen == 9) SISetResponse(&origin, sizeof(origin) * 8);
 				break;
 			case CMD_RECALIBRATE:
 			case CMD_STATUS_LONG:
-				if (length == 25) {
+				if (nSiCmdLen == 25) {
 					id.status.mode  = buffer[1];
 					id.status.motor = buffer[2];
-
 					SISetResponse(&origin, sizeof(origin) * 8);
 				}
 				break;
 		}
-
 		set_motor(id.status.motor == MOTOR_RUMBLE);
 	}
+	RegisterRamReset(RESET_ALL_REG);
+	main();
 }
