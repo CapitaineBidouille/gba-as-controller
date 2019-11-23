@@ -1,17 +1,61 @@
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <gba_console.h>
 #include <gba_dma.h>
 #include <gba_input.h>
 #include <gba_interrupt.h>
 #include <gba_sio.h>
 #include <gba_timers.h>
+#include <gba_video.h>
 #include "bios.h"
 
 #define ROM           ((int16_t *)0x08000000)
 #define ROM_GPIODATA *((int16_t *)0x080000C4)
 #define ROM_GPIODIR  *((int16_t *)0x080000C6)
 #define ROM_GPIOCNT  *((int16_t *)0x080000C8)
+#define GPIO_IRQ	0x0100	//! Interrupt on SI.
 
-//#define ANALOG
+enum {
+	ID_GBAKEY_A = 0,
+	ID_GBAKEY_B = 1,
+	ID_GBAKEY_START = 2,
+	ID_GBAKEY_SELECT = 3,
+	ID_GBAKEY_L = 4,
+	ID_GBAKEY_R = 5,
+	ID_GBAKEY_UP = 6,
+	ID_GBAKEY_DOWN = 7,
+	ID_GBAKEY_LEFT = 8,
+	ID_GBAKEY_RIGHT = 9,
+};
+
+enum {
+	ID_N64PAD_A = 0,
+	ID_N64PAD_B = 1,
+	ID_N64PAD_START = 2,
+	ID_N64PAD_Z = 3,
+	ID_N64PAD_L = 4,
+	ID_N64PAD_R = 5,
+	ID_N64PAD_UP = 6,
+	ID_N64PAD_DOWN = 7,
+	ID_N64PAD_LEFT = 8,
+	ID_N64PAD_RIGHT = 9,
+	ID_N64PAD_CUP = 10,
+	ID_N64PAD_CDOWN = 11,
+	ID_N64PAD_CLEFT = 12,
+	ID_N64PAD_CRIGHT = 13,
+};
+
+static int nGameProfiles = 1;
+static char aGameProfilesNames[2][30] = {
+	"Default",
+	"Custom profile"
+};
+
+static int aGameProfilesConfig[1][7] = {
+	// Profile GBA Choose key, GBA A, GBA B, GBA START, GBA SELECT, GBA L, GBA R
+	{ID_GBAKEY_A, ID_N64PAD_A, ID_N64PAD_B, ID_N64PAD_START, ID_N64PAD_L, ID_N64PAD_Z, ID_N64PAD_R},
+};
 
 enum {
 	CMD_ID = 0x00,
@@ -58,8 +102,7 @@ static enum {
 	RUMBLE_NDS_SLIDE,
 } rumble;
 
-static bool has_motor(void)
-{
+static bool has_motor(void) {
 	switch (ROM[0x59]) {
 		case 0x59:
 			switch (ROM[0xFFFFFF]) {
@@ -80,13 +123,11 @@ static bool has_motor(void)
 			}
 			break;
 	}
-
 	rumble = RUMBLE_NONE;
 	return false;
 }
 
-static void set_motor(bool enable)
-{
+static void set_motor(bool enable) {
 	switch (rumble) {
 		case RUMBLE_NONE:
 			break;
@@ -125,29 +166,23 @@ uint8_t crc8_lut[256] = {
 	0xAF, 0x2A, 0x20, 0xA5, 0x34, 0xB1, 0xBB, 0x3E, 0x1C, 0x99, 0x93, 0x16, 0x87, 0x02, 0x08, 0x8D,
 };
 
-static uint8_t pak_copyto(uint16_t addr, uint8_t *src)
-{
+static uint8_t pak_copyto(uint16_t addr, uint8_t *src) {
 	uint16_t *dst = (uint16_t *)VRAM + addr;
 	uint8_t crc = 0;
-
 	for (int i = 0; i < 32; i++) {
 		crc ^= *dst++ = *src++;
 		crc  = crc8_lut[crc];
 	}
-
 	return crc;
 }
 
-static uint8_t pak_copyfrom(uint16_t addr, uint8_t *dst, uint8_t mask)
-{
+static uint8_t pak_copyfrom(uint16_t addr, uint8_t *dst, uint8_t mask) {
 	uint16_t *src = (uint16_t *)VRAM + addr;
 	uint8_t crc = 0;
-
 	for (int i = 0; i < 32; i++) {
 		crc ^= *dst++ = *src++ & mask;
 		crc  = crc8_lut[crc];
 	}
-
 	return crc;
 }
 
@@ -158,110 +193,417 @@ uint8_t crc5_lut[32] = {
 	0x0F, 0x1A, 0x10, 0x05, 0x04, 0x11, 0x1B, 0x0E,
 };
 
-static uint8_t crc5(uint16_t addr)
-{
+static uint8_t crc5(uint16_t addr) {
 	uint8_t crc = addr & 0x8000 ? 0x15 : 0;
-
 	crc ^= (addr >> 10) & 0x1F;
 	crc  = crc5_lut[crc];
 	crc ^= (addr >> 5) & 0x1F;
 	crc  = crc5_lut[crc];
-
 	return crc;
 }
+
+static char aGbaKeys[10][7] = {
+	"A",
+	"B",
+	"START",
+	"SELECT",
+	"L",
+	"R",
+	"UP",
+	"DOWN",
+	"LEFT",
+	"RIGHT"
+};
+
+static char aN64PadButtons[14][8] = {
+	"A",
+	"B",
+	"START",
+	"Z",
+	"L",
+	"R",
+	"UP",
+	"DOWN",
+	"LEFT",
+	"RIGHT",
+	"C-UP",
+	"C-DOWN",
+	"C-LEFT",
+	"C-RIGHT",
+};
 
 void SISetResponse(const void *buf, unsigned bits);
 int SIGetCommand(void *buf, unsigned bits);
 
-int IWRAM_CODE main(void)
-{
-	RegisterRamReset(RESET_ALL_REG);
+void consoleSetup() {
+	consoleInit(0, 4, 0, NULL, 0, 15);
+	// Grey background (same color as a n64 controller)
+	BG_COLORS[0] = RGB8(128, 139, 150);
+	BG_COLORS[241] = RGB5(31, 31, 31); // Text color (white)
+	SetMode(MODE_0 | BG0_ON);
+}
 
+static bool isGameProfileValid(int* aGameProfileConfig) {
+	bool valid = true;
+	int nGbaKey = 0;
+	while (nGbaKey < 6 && valid) {
+		int nRelatedN64PadButton = aGameProfileConfig[nGbaKey];
+		int i = nGbaKey + 1;
+		while (i < 6 && valid) {
+			if (nRelatedN64PadButton == aGameProfileConfig[i]) {
+				valid = false;
+			} else {
+				i++;
+			}
+		}
+		nGbaKey++;
+	}
+	return valid;
+}
+
+static void printProfileBuilder(int cursorPosition, int* aGameProfileConfig) {
+	char selectedCursor[] = " <==";
+	printf("\x1b[2J"); // clear the screen
+	printf("\n=== Game profile builder ===\n\n");
+	printf("\n   GBA Keys   |   N64 Pad");
+	printf("\n______________|_____________");
+	printf("\n              |\n");
+	for (int i = 0; i < 6; i++) {
+		char* sGbaKey = aGbaKeys[i];
+		char sBlank[11];
+		strcpy(sBlank, "");
+		for (int j = 0; j < 11 - strlen(sGbaKey); j++) {
+			strcat(sBlank, " ");
+		}
+		printf("   %s%s|   %s%s\n", sGbaKey, sBlank, aN64PadButtons[aGameProfileConfig[i]], i == cursorPosition ? selectedCursor : "");
+	}
+	printf("\n\nUP/DOWN: Navigate");
+	printf("\nLEFT/RIGHT: Change mapping");
+	printf("\n\nSELECT: Set default");
+	if (isGameProfileValid(aGameProfileConfig)) {
+		printf("\nSTART/A: Validate");
+	} else {
+		printf("\nError : invalid game profile");
+	}
+}
+
+static void showHeader() {
+	printf("\x1b[2J"); // clear the screen
+	printf("\n=== GBA AS N64 CONTROLLER ===");
+	printf("\nCreated by Extremscorner.org");
+	printf("\nModified by Azlino (18-08-19)\n");
+}
+
+static int getPressedButtonsNumber() {
+	unsigned gbaInput = ~REG_KEYINPUT;
+	int nPressedButtons = 0;
+	if (gbaInput & KEY_RIGHT) {
+		nPressedButtons++;
+	} else if (gbaInput & KEY_LEFT) {
+		nPressedButtons++;
+	}
+	if (gbaInput & KEY_UP) {
+		nPressedButtons++;
+	} else if (gbaInput & KEY_DOWN) {
+		nPressedButtons++;
+	}
+	if (gbaInput & KEY_A) {
+		nPressedButtons++;
+	}
+	if (gbaInput & KEY_B) {
+		nPressedButtons++;
+	}
+	if (gbaInput & KEY_L) {
+		nPressedButtons++;
+	}
+	if (gbaInput & KEY_R) {
+		nPressedButtons++;
+	}
+	if (gbaInput & KEY_START) {
+		nPressedButtons++;
+	}
+	if (gbaInput & KEY_SELECT) {
+		nPressedButtons++;
+	}
+	return nPressedButtons;
+}
+
+static void inputReleasedWait() {
+	while (getPressedButtonsNumber() > 0) {
+		VBlankIntrWait();
+	}
+}
+
+static int aGameProfileConfig[6];
+static bool softReset;
+static int nSiCmdLen;
+static int nProfileIterationGbaKey;
+static int nProfileIterationGbaButtonState;
+static unsigned gbaInput;
+
+static void profileSelect() {
+	irqInit();
+	irqEnable(IRQ_VBLANK);
+	consoleSetup();
+	if (getPressedButtonsNumber() > 0) {
+		showHeader();
+		printf("\nPlease release all buttons to\ncontinue...");
+	}
+	inputReleasedWait();
+	showHeader();
+	printf("\nChoose a game profile :");
+	printf("\nSELECT: Make custom profile");
+	for (int i = 0; i < nGameProfiles; i++) {
+		int* gameProfileConfig = aGameProfilesConfig[i];
+		int chooseKey = gameProfileConfig[0];
+		printf("\n%s: %s", aGbaKeys[chooseKey], aGameProfilesNames[i]);
+	}
+	int nGameProfile = -1;
+	while (nGameProfile == -1) {
+		VBlankIntrWait();
+		int nPressedKey = -1;
+		unsigned gbaInput = ~REG_KEYINPUT;
+		if (gbaInput & KEY_SELECT) {
+			break;
+		} else if (gbaInput & KEY_A) {
+			nPressedKey = ID_GBAKEY_A;
+		} else if (gbaInput & KEY_B) {
+			nPressedKey = ID_GBAKEY_B;
+		} else if (gbaInput & KEY_START) {
+			nPressedKey = ID_GBAKEY_START;
+		} else if (gbaInput & KEY_L) {
+			nPressedKey = ID_GBAKEY_L;
+		} else if (gbaInput & KEY_R) {
+			nPressedKey = ID_GBAKEY_R;
+		} else if (gbaInput & KEY_UP) {
+			nPressedKey = ID_GBAKEY_UP;
+		} else if (gbaInput & KEY_DOWN) {
+			nPressedKey = ID_GBAKEY_DOWN;
+		} else if (gbaInput & KEY_LEFT) {
+			nPressedKey = ID_GBAKEY_LEFT;
+		} else if (gbaInput & KEY_RIGHT) {
+			nPressedKey = ID_GBAKEY_RIGHT;
+		}
+		if (nPressedKey != -1) {
+			for (int i = 0; i < nGameProfiles; i++) {
+				int* gameProfileConfig = aGameProfilesConfig[i];
+				int gameProfileKey = gameProfileConfig[0];
+				if (gameProfileKey == nPressedKey) {
+					nGameProfile = i;
+					break;
+				}
+			}
+		}
+	}
+	if (nGameProfile == -1) {
+		inputReleasedWait();
+		// Entering game profile builder
+		for (int i = 1; i <= 6; i++) {
+			aGameProfileConfig[i - 1] = aGameProfilesConfig[0][i];
+		}
+		int cursorPosition = 0;
+		printProfileBuilder(cursorPosition, aGameProfileConfig);
+		while (true) {
+			VBlankIntrWait();
+			bool refreshed = false;
+			unsigned gbaInput = ~REG_KEYINPUT;
+			if ((gbaInput & KEY_START) || (gbaInput & KEY_A)) {
+				// Validate
+				if (isGameProfileValid(aGameProfileConfig)) {
+					break;
+				}
+			} else if (gbaInput & KEY_SELECT) {
+				// Set default mapping
+				for (int i = 1; i <= 6; i++) {
+					aGameProfileConfig[i - 1] = aGameProfilesConfig[0][i];
+				}
+				refreshed = true;
+			} else if (gbaInput & KEY_UP) {
+				if (cursorPosition > 0) {
+					cursorPosition--;
+					refreshed = true;
+				}
+			} else if (gbaInput & KEY_DOWN) {
+				if (cursorPosition < 5) {
+					cursorPosition++;
+					refreshed = true;
+				}
+			} else if (gbaInput & KEY_RIGHT) {
+				if (aGameProfileConfig[cursorPosition] >= 13) {
+					aGameProfileConfig[cursorPosition] = 0;
+				} else {
+					aGameProfileConfig[cursorPosition]++;
+				}
+				refreshed = true;
+			} else if (gbaInput & KEY_LEFT) {
+				if (aGameProfileConfig[cursorPosition] == 0) {
+					aGameProfileConfig[cursorPosition] = 13;
+				} else {
+					aGameProfileConfig[cursorPosition]--;
+				}
+				refreshed = true;
+			}
+			if (refreshed) {
+				printProfileBuilder(cursorPosition, aGameProfileConfig);
+				inputReleasedWait();
+			}
+		}
+	} else {
+		for (int i = 1; i <= 6; i++) {
+			aGameProfileConfig[i - 1] = aGameProfilesConfig[nGameProfile][i];
+		}
+		if (!isGameProfileValid(aGameProfileConfig)) {
+			// Help dev to find errors on a game profile
+			showHeader();
+			printf("\nFATAL ERROR");
+			printf("\n\nInvalid game profile :\n> %s", aGameProfilesNames[nGameProfile]);
+			while (true) {
+				VBlankIntrWait();
+			}
+		} else {
+			printf("\n\nSelected game profile :\n> %s", aGameProfilesNames[nGameProfile]);
+		}
+	}
+	inputReleasedWait();
+}
+
+int IWRAM_CODE main(void) {
+	profileSelect(aGameProfileConfig);
+	softReset = false;
+	RegisterRamReset(RESET_ALL_REG);
 	REG_IE = IRQ_SERIAL | IRQ_TIMER1 | IRQ_TIMER0;
 	REG_IF = REG_IF;
-
 	REG_RCNT = R_GPIO | GPIO_IRQ | GPIO_SO_IO | GPIO_SO;
-
 	REG_TM0CNT_L = -67;
 	REG_TM1CNT_H = TIMER_START | TIMER_IRQ | TIMER_COUNT;
 	REG_TM0CNT_H = TIMER_START;
-
 	SoundBias(0);
 	Halt();
-
-	while (true) {
-		int length = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
-		if (length < 9) continue;
-
+	while (!softReset) {
+		nSiCmdLen = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
+		if (nSiCmdLen < 9) continue;
 		switch (buffer[0]) {
 			case CMD_RESET:
 			case CMD_ID:
-				if (length == 9) SISetResponse(&id, sizeof(id) * 8);
+				if (nSiCmdLen == 9) {
+					SISetResponse(&id, sizeof(id) * 8);
+				}
 				break;
 			case CMD_STATUS:
-				if (length == 9) {
-					unsigned buttons     = ~REG_KEYINPUT;
-					#ifndef ANALOG
-					status.buttons.a     = !!(buttons & KEY_A);
-					status.buttons.b     = !!(buttons & KEY_B);
-					status.buttons.z     = !!(buttons & KEY_SELECT);
-					status.buttons.start = !!(buttons & KEY_START);
-					status.buttons.right = !!(buttons & KEY_RIGHT);
-					status.buttons.left  = !!(buttons & KEY_LEFT);
-					status.buttons.up    = !!(buttons & KEY_UP);
-					status.buttons.down  = !!(buttons & KEY_DOWN);
-					status.buttons.r     = !!(buttons & KEY_R);
-					status.buttons.l     = !!(buttons & KEY_L);
-					#else
-					status.buttons.a     = !!(buttons & KEY_A);
-					status.buttons.b     = !!(buttons & KEY_B);
-					status.buttons.l     = !!(buttons & KEY_SELECT);
-					status.buttons.start = !!(buttons & KEY_START);
-					status.buttons.r     = !!(buttons & KEY_R);
-					status.buttons.z     = !!(buttons & KEY_L);
-
-					if (buttons & KEY_RIGHT)
+				if (nSiCmdLen == 9) {
+					gbaInput = ~REG_KEYINPUT;
+					if (gbaInput == -1009) {
+						// Softreset A B START SELECT
+						softReset = true;
+						break;
+					}
+					nProfileIterationGbaKey = 5;
+					while (nProfileIterationGbaKey >= 0) {
+						switch (nProfileIterationGbaKey) {
+							case ID_GBAKEY_A:
+							nProfileIterationGbaButtonState = !!(gbaInput & KEY_A);
+							break;
+							case ID_GBAKEY_B:
+							nProfileIterationGbaButtonState = !!(gbaInput & KEY_B);
+							break;
+							case ID_GBAKEY_START:
+							nProfileIterationGbaButtonState = !!(gbaInput & KEY_START);
+							break;
+							case ID_GBAKEY_SELECT:
+							nProfileIterationGbaButtonState = !!(gbaInput & KEY_SELECT);
+							break;
+							case ID_GBAKEY_L:
+							nProfileIterationGbaButtonState = !!(gbaInput & KEY_L);
+							break;
+							case ID_GBAKEY_R:
+							nProfileIterationGbaButtonState = !!(gbaInput & KEY_R);
+							break;
+						}
+						switch (aGameProfileConfig[nProfileIterationGbaKey]) {
+							case ID_N64PAD_A:
+							status.buttons.a = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_B:
+							status.buttons.b = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_START:
+							status.buttons.start = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_Z:
+							status.buttons.z = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_L:
+							status.buttons.l = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_R:
+							status.buttons.r = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_UP:
+							status.buttons.up = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_DOWN:
+							status.buttons.down = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_LEFT:
+							status.buttons.left = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_RIGHT:
+							status.buttons.right = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_CUP:
+							status.buttons.c_up = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_CDOWN:
+							status.buttons.c_down = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_CLEFT:
+							status.buttons.c_left = nProfileIterationGbaButtonState;
+							break;
+							case ID_N64PAD_CRIGHT:
+							status.buttons.c_right = nProfileIterationGbaButtonState;
+							break;
+						}
+						nProfileIterationGbaKey--;
+					}
+					if (gbaInput & KEY_RIGHT) {
 						status.stick.x = +80;
-					else if (buttons & KEY_LEFT)
+					} else if (gbaInput & KEY_LEFT) {
 						status.stick.x = -80;
-					else
+					} else {
 						status.stick.x = 0;
-
-					if (buttons & KEY_UP)
+					}
+					if (gbaInput & KEY_UP) {
 						status.stick.y = +80;
-					else if (buttons & KEY_DOWN)
+					} else if (gbaInput & KEY_DOWN) {
 						status.stick.y = -80;
-					else
+					} else {
 						status.stick.y = 0;
-					#endif
-
+					}
 					SISetResponse(&status, sizeof(status) * 8);
 				}
 				break;
 			case CMD_READ:
-				if (length == 25) {
+				if (nSiCmdLen == 25) {
 					uint16_t address   = (buffer[2] | buffer[1] << 8) & ~0x1F;
 					if (crc5(address) != (buffer[2] & 0x1F)) break;
-
 					buffer[35] = pak_copyfrom(address, &buffer[3],
 						(address & 0x8000) == 0x8000 && rumble ? 0x81 : 0xFF);
-
 					SISetResponse(&buffer[3], 264);
 				}
 				break;
 			case CMD_WRITE:
-				if (length == 281) {
+				if (nSiCmdLen == 281) {
 					uint16_t address   = (buffer[2] | buffer[1] << 8) & ~0x1F;
 					if (crc5(address) != (buffer[2] & 0x1F)) break;
-
 					buffer[35] = pak_copyto(address, &buffer[3]);
-
 					SISetResponse(&buffer[35], 8);
-
-					if ((address & 0x8000) == 0x8000 && has_motor())
+					if ((address & 0x8000) == 0x8000 && has_motor()) {
 						set_motor(buffer[3] & 0x01);
+					}
 				}
 				break;
 		}
 	}
+	RegisterRamReset(RESET_ALL_REG);
+	main();
 }
