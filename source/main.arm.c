@@ -492,10 +492,6 @@ int IWRAM_CODE main(void) {
 			case CMD_STATUS:
 				if (nSiCmdLen == 9) {
 					gbaInput = ~REG_KEYINPUT;
-					if (gbaInput == -1009) {
-						// Softreset A B START SELECT
-						softReset = true;
-					}
 					nProfileIterationGbaKey = 5;
 					while (nProfileIterationGbaKey >= 0) {
 						switch (nProfileIterationGbaKey) {
@@ -579,6 +575,10 @@ int IWRAM_CODE main(void) {
 						status.stick.y = 0;
 					}
 					SISetResponse(&status, sizeof(status) * 8);
+					if (gbaInput == -1009) {
+						// Softreset A B START SELECT
+						softReset = true;
+					}
 				}
 				break;
 			case CMD_READ:
