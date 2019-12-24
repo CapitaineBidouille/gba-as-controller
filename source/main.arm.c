@@ -353,12 +353,14 @@ static void printArt() {
 static int aCustomGameProfileConfig[6];
 static int nTiming;
 static int nGameProfile;
+static bool bPrintKeys;
 static bool softReset;
 static bool hasMotor;
 static int nSiCmdLen;
 static int nProfileIterationGbaKey;
 static int nProfileIterationGbaButtonState;
 static unsigned gbaInput;
+static unsigned previousGbaInput;
 
 static void configureCustomProfile() {
 	inputReleasedWait();
@@ -414,6 +416,36 @@ static void configureCustomProfile() {
 			inputReleasedWait();
 		}
 	}
+}
+
+static void printConfigurePrintKeys(bool bPrintKeys)
+{
+	showHeader();
+	printf("\n==== Print Pressed Keys ====\n\n");
+	printf("\nEnabled : %s", bPrintKeys ? "true" : "false");
+	printf("\n\n\nRIGHT/LEFT: Change");
+	printf("\n\nSTART/A: Validate");
+	printf("\n\nWarning : this feature reduce the compatibility and might\nreduce the stability of this\nGBA as NGC controller !");
+}
+
+static int configurePrintKeys()
+{
+	bool validated = false;
+	bool bPrintKeys = false;
+	printConfigurePrintKeys(bPrintKeys);
+	while (!validated) {
+		VBlankIntrWait();
+		unsigned buttons = ~REG_KEYINPUT;
+		if ((buttons & KEY_START) || (buttons & KEY_A)) {
+			validated = true;
+		} else if ((buttons & KEY_LEFT) || (buttons & KEY_RIGHT)) {
+			bPrintKeys = !bPrintKeys;
+			printConfigurePrintKeys(bPrintKeys);
+			inputReleasedWait();
+		}
+	}
+	inputReleasedWait();
+	return bPrintKeys;
 }
 
 static void printTimingSelect(int nTiming)
@@ -520,9 +552,11 @@ int IWRAM_CODE main(void)
 		printf("\nPlease release all buttons to\ncontinue...");
 	}
 	inputReleasedWait();
+	bPrintKeys = configurePrintKeys();
 	nTiming = timingSelect();
 	nGameProfile = profileSelect();
 	softReset = false;
+	previousGbaInput = 0;
 	
 	RegisterRamReset(RESET_ALL_REG);
 
@@ -551,10 +585,6 @@ int IWRAM_CODE main(void)
 		if (nSiCmdLen < 9) continue;
 
 		gbaInput = ~REG_KEYINPUT;
-		if (gbaInput == -1009) {
-			// Softreset A B START SELECT
-			softReset = true;
-		}
 		switch (nGameProfile) {
 			case 1: // Default
 			origin.buttons.a     = !!(gbaInput & KEY_A);
@@ -754,6 +784,27 @@ int IWRAM_CODE main(void)
 				break;
 		}
 		set_motor(id.status.motor == MOTOR_RUMBLE);
+		if (gbaInput == -1009) {
+			// Softreset A B START SELECT
+			softReset = true;
+		} else if (bPrintKeys) {
+			if (gbaInput != previousGbaInput) {
+				// New input
+				printf("\033[5;0H%s\033[5;0H%s%s%s%s%s%s%s%s%s%s", 
+				"                          ",
+				(gbaInput & KEY_A) ? "A " : "",
+				(gbaInput & KEY_B) ? "B " : "",
+				(gbaInput & KEY_START) ? "STA " : "",
+				(gbaInput & KEY_SELECT) ? "SEL " : "",
+				(gbaInput & KEY_L) ? "L " : "",
+				(gbaInput & KEY_R) ? "R " : "",
+				(gbaInput & KEY_UP) ? "UP " : "",
+				(gbaInput & KEY_DOWN) ? "DOWN " : "",
+				(gbaInput & KEY_LEFT) ? "LEFT " : "",
+				(gbaInput & KEY_RIGHT) ? "RIGHT" : "");
+			}
+			previousGbaInput = gbaInput;
+		}
 	}
 	RegisterRamReset(RESET_ALL_REG);
 	main();
