@@ -353,6 +353,7 @@ static void printArt() {
 static int aCustomGameProfileConfig[6];
 static int nTiming;
 static int nGameProfile;
+static bool softReset;
 static bool hasMotor;
 static int nSiCmdLen;
 static int nProfileIterationGbaKey;
@@ -521,6 +522,7 @@ int IWRAM_CODE main(void)
 	inputReleasedWait();
 	nTiming = timingSelect();
 	nGameProfile = profileSelect();
+	softReset = false;
 	
 	RegisterRamReset(RESET_ALL_REG);
 
@@ -544,11 +546,15 @@ int IWRAM_CODE main(void)
 	SoundBias(0);
 	Halt();
 
-	while (true) {
+	while (!softReset) {
 		nSiCmdLen = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
 		if (nSiCmdLen < 9) continue;
 
 		gbaInput = ~REG_KEYINPUT;
+		if (gbaInput == -1009) {
+			// Softreset A B START SELECT
+			softReset = true;
+		}
 		switch (nGameProfile) {
 			case 1: // Default
 			origin.buttons.a     = !!(gbaInput & KEY_A);
@@ -747,7 +753,6 @@ int IWRAM_CODE main(void)
 				break;
 		}
 		set_motor(id.status.motor == MOTOR_RUMBLE);
-		if (gbaInput == -1009) break; // Softreset A B START SELECT
 	}
 	RegisterRamReset(RESET_ALL_REG);
 	main();
