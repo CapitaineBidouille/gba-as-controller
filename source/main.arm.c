@@ -291,7 +291,7 @@ static void showHeader() {
 	printf("\x1b[2J"); // clear the screen
 	printf("\n=== GBA AS N64 CONTROLLER ===");
 	printf("\nCreated by Extremscorner.org");
-	printf("\nModified by Azlino (18-08-19)\n");
+	printf("\nModified by Azlino (24-12-19)\n");
 }
 
 static int getPressedButtonsNumber() {
@@ -495,7 +495,6 @@ int IWRAM_CODE main(void) {
 					if (gbaInput == -1009) {
 						// Softreset A B START SELECT
 						softReset = true;
-						break;
 					}
 					nProfileIterationGbaKey = 5;
 					while (nProfileIterationGbaKey >= 0) {
