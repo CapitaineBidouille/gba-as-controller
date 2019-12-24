@@ -44,13 +44,14 @@ enum {
 	ID_GCPAD_RIGHT = 11,
 };
 
-static char aGameProfilesNames[6][30] = {
+static char aGameProfilesNames[7][30] = {
 	"Custom profile",
 	"Default",
 	"Super Smash Ultimate",
 	"Mario Kart Double Dash",
 	"Mario Kart 8 Deluxe",
-	"New Super Mario Bros"
+	"New Super Mario Bros",
+	"Mario Kart Wii"
 };
 
 static int aDefaultProfileConfig[6] = {ID_GCPAD_A, ID_GCPAD_B, ID_GCPAD_START, ID_GCPAD_Z, ID_GCPAD_L, ID_GCPAD_R};
@@ -295,7 +296,7 @@ static void showHeader() {
 	printf("\x1b[2J"); // clear the screen
 	printf("\n=== GBA AS NGC CONTROLLER ===");
 	printf("\nCreated by Extremscorner.org");
-	printf("\nModified by Azlino (23-11-19)\n");
+	printf("\nModified by Azlino (24-12-19)\n");
 }
 
 static int getPressedButtonsNumber() {
@@ -472,6 +473,7 @@ static int profileSelect() {
 	printf("\nL: %s", aGameProfilesNames[3]);
 	printf("\nR: %s", aGameProfilesNames[4]);
 	printf("\nUP: %s", aGameProfilesNames[5]);
+	printf("\nRIGHT: %s", aGameProfilesNames[6]);
 	int nGameProfile = -1;
 	while (nGameProfile == -1) {
 		VBlankIntrWait();
@@ -495,7 +497,7 @@ static int profileSelect() {
 		} else if (buttons & KEY_LEFT) {
 			nGameProfile = -1;
 		} else if (buttons & KEY_RIGHT) {
-			nGameProfile = -1;
+			nGameProfile = 6; // Mario Kart Wii
 		}
 	}
 	if (nGameProfile == 0) {
@@ -547,7 +549,6 @@ int IWRAM_CODE main(void)
 		if (nSiCmdLen < 9) continue;
 
 		gbaInput = ~REG_KEYINPUT;
-		if (gbaInput == -1009) break; // Softreset A B START SELECT
 		switch (nGameProfile) {
 			case 1: // Default
 			origin.buttons.a     = !!(gbaInput & KEY_A);
@@ -588,6 +589,14 @@ int IWRAM_CODE main(void)
 			origin.buttons.b     = !!(gbaInput & KEY_SELECT);
 			origin.buttons.l     = !!(gbaInput & KEY_L);
 			origin.buttons.r     = !!(gbaInput & KEY_R);
+			case 6: // Mario Kart Wii
+			origin.buttons.a     = !!(gbaInput & KEY_A);
+			origin.buttons.up    = !!(gbaInput & KEY_B);
+			origin.buttons.start = !!(gbaInput & KEY_START);
+			origin.buttons.x     = !!(gbaInput & KEY_SELECT);
+			origin.buttons.l     = !!(gbaInput & KEY_L);
+			origin.buttons.b     = !!(gbaInput & KEY_R);
+			origin.buttons.down  = !!(gbaInput & KEY_DOWN);
 			break;
 			case 0: // Custom profile
 			nProfileIterationGbaKey = 5;
@@ -738,6 +747,7 @@ int IWRAM_CODE main(void)
 				break;
 		}
 		set_motor(id.status.motor == MOTOR_RUMBLE);
+		if (gbaInput == -1009) break; // Softreset A B START SELECT
 	}
 	RegisterRamReset(RESET_ALL_REG);
 	main();
