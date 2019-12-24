@@ -595,6 +595,7 @@ int IWRAM_CODE main(void)
 			origin.buttons.b     = !!(gbaInput & KEY_SELECT);
 			origin.buttons.l     = !!(gbaInput & KEY_L);
 			origin.buttons.r     = !!(gbaInput & KEY_R);
+			break;
 			case 6: // Mario Kart Wii
 			origin.buttons.a     = !!(gbaInput & KEY_A);
 			origin.buttons.up    = !!(gbaInput & KEY_B);
