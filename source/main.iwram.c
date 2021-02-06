@@ -606,6 +606,22 @@ int main(void) {
 					if (gbaInput == -1009) {
 						// Softreset A B START SELECT
 						softReset = true;
+						
+						status.buttons.right   = 0;
+						status.buttons.left    = 0;
+						status.buttons.down    = 0;
+						status.buttons.up      = 0;
+						status.buttons.start   = 0;
+						status.buttons.z       = 0;
+						status.buttons.b       = 0;
+						status.buttons.a       = 0;
+						status.buttons.c_right = 0;
+						status.buttons.c_left  = 0;
+						status.buttons.c_down  = 0;
+						status.buttons.c_up    = 0;
+						status.buttons.r       = 0;
+						status.buttons.l       = 0;
+						status.buttons.reset   = 0;
 					}
 				}
 				break;
