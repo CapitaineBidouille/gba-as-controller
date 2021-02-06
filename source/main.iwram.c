@@ -818,6 +818,23 @@ int main(void)
 		if (gbaInput == -1009) {
 			// Softreset A B START SELECT
 			softReset = true;
+			
+			// Reset all inputs to initial state
+			// Fix key press not released when switching on a different profile
+			origin.buttons.get_origin = 0;
+			origin.buttons.use_origin = 0;
+			origin.buttons.start      = 0;
+			origin.buttons.a          = 0;
+			origin.buttons.b          = 0;
+			origin.buttons.x          = 0;
+			origin.buttons.y          = 0;
+			origin.buttons.l          = 0;
+			origin.buttons.r          = 0;
+			origin.buttons.z          = 0;
+			origin.buttons.up         = 0;
+			origin.buttons.down       = 0;
+			origin.buttons.left       = 0;
+			origin.buttons.right      = 0;
 		} else if (bPrintKeys) {
 			if (gbaInput != previousGbaInput) {
 				// New input
