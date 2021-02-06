@@ -1,3 +1,29 @@
+/* 
+ * Copyright (c) 2016-2021, Extrems' Corner.org
+ * All rights reserved.
+ * 
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ * 
+ * 1. Redistributions of source code must retain the above copyright notice, this
+ *    list of conditions and the following disclaimer.
+ * 
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ * 
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+ * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+ * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+ * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+ * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
+
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,6 +35,8 @@
 #include <gba_timers.h>
 #include <gba_video.h>
 #include "bios.h"
+
+#define struct struct __attribute__((packed, scalar_storage_order("big-endian")))
 
 #define ROM           ((int16_t *)0x08000000)
 #define ROM_GPIODATA *((int16_t *)0x080000C4)
@@ -72,32 +100,33 @@ enum {
 };
 
 struct buttons {
-	uint16_t a          : 1;
-	uint16_t b          : 1;
-	uint16_t x          : 1;
-	uint16_t y          : 1;
-	uint16_t start      : 1;
+	uint16_t            : 1;
+	uint16_t unknown    : 1;
 	uint16_t get_origin : 1;
-	uint16_t err_latch  : 1;
-	uint16_t err_status : 1;
-	uint16_t left       : 1;
-	uint16_t right      : 1;
-	uint16_t down       : 1;
-	uint16_t up         : 1;
-	uint16_t z          : 1;
-	uint16_t r          : 1;
-	uint16_t l          : 1;
+	uint16_t start      : 1;
+	uint16_t y          : 1;
+	uint16_t x          : 1;
+	uint16_t b          : 1;
+	uint16_t a          : 1;
 	uint16_t use_origin : 1;
+	uint16_t l          : 1;
+	uint16_t r          : 1;
+	uint16_t z          : 1;
+	uint16_t up         : 1;
+	uint16_t down       : 1;
+	uint16_t right      : 1;
+	uint16_t left       : 1;
 };
 
 static struct {
-	uint8_t type[2];
+	uint16_t type;
 
 	struct {
-		uint8_t mode   : 3;
-		uint8_t motor  : 2;
-		uint8_t origin : 1;
-		uint8_t        : 2;
+		uint8_t            : 1;
+		uint8_t unknown    : 1;
+		uint8_t get_origin : 1;
+		uint8_t motor      : 2;
+		uint8_t mode       : 3;
 	} status;
 } id;
 
@@ -107,19 +136,19 @@ static struct {
 	union {
 		struct {
 			struct { uint8_t x : 8, y : 8; } substick;
-			struct { uint8_t r : 4, l : 4; } trigger;
-			struct { uint8_t b : 4, a : 4; } button;
+			struct { uint8_t l : 4, r : 4; } trigger;
+			struct { uint8_t a : 4, b : 4; } button;
 		} mode0;
 
 		struct {
-			struct { uint8_t y : 4, x : 4; } substick;
+			struct { uint8_t x : 4, y : 4; } substick;
 			struct { uint8_t l : 8, r : 8; } trigger;
-			struct { uint8_t b : 4, a : 4; } button;
+			struct { uint8_t a : 4, b : 4; } button;
 		} mode1;
 
 		struct {
-			struct { uint8_t y : 4, x : 4; } substick;
-			struct { uint8_t r : 4, l : 4; } trigger;
+			struct { uint8_t x : 4, y : 4; } substick;
+			struct { uint8_t l : 4, r : 4; } trigger;
 			struct { uint8_t a : 8, b : 8; } button;
 		} mode2;
 
@@ -296,7 +325,7 @@ static void showHeader() {
 	printf("\x1b[2J"); // clear the screen
 	printf("\n=== GBA AS NGC CONTROLLER ===");
 	printf("\nCreated by Extremscorner.org");
-	printf("\nModified by Azlino (24-12-19)\n");
+	printf("\nModified by Azlino (06-02-21)\n");
 }
 
 static int getPressedButtonsNumber() {
@@ -542,7 +571,7 @@ static int profileSelect() {
 	return nGameProfile;
 }
 
-int IWRAM_CODE main(void)
+int main(void)
 {
 	irqInit();
 	irqEnable(IRQ_VBLANK);
@@ -587,130 +616,132 @@ int IWRAM_CODE main(void)
 		gbaInput = ~REG_KEYINPUT;
 		switch (nGameProfile) {
 			case 1: // Default
-			origin.buttons.a     = !!(gbaInput & KEY_A);
-			origin.buttons.b     = !!(gbaInput & KEY_B);
-			origin.buttons.start = !!(gbaInput & KEY_START);
-			origin.buttons.z     = !!(gbaInput & KEY_SELECT);
-			origin.buttons.l     = !!(gbaInput & KEY_L);
-			origin.buttons.r     = !!(gbaInput & KEY_R);
-			break;
+				origin.buttons.a     = !!(gbaInput & KEY_A);
+				origin.buttons.b     = !!(gbaInput & KEY_B);
+				origin.buttons.start = !!(gbaInput & KEY_START);
+				origin.buttons.z     = !!(gbaInput & KEY_SELECT);
+				origin.buttons.l     = !!(gbaInput & KEY_L);
+				origin.buttons.r     = !!(gbaInput & KEY_R);
+				break;
 			case 2: // Super Smash Ultimate
-			origin.buttons.a     = !!(gbaInput & KEY_A);
-			origin.buttons.b     = !!(gbaInput & KEY_B);
-			origin.buttons.start = !!(gbaInput & KEY_START);
-			origin.buttons.x     = !!(gbaInput & KEY_SELECT);
-			origin.buttons.l     = !!(gbaInput & KEY_L);
-			origin.buttons.z     = !!(gbaInput & KEY_R);
-			break;
+				origin.buttons.a     = !!(gbaInput & KEY_A);
+				origin.buttons.b     = !!(gbaInput & KEY_B);
+				origin.buttons.start = !!(gbaInput & KEY_START);
+				origin.buttons.x     = !!(gbaInput & KEY_SELECT);
+				origin.buttons.l     = !!(gbaInput & KEY_L);
+				origin.buttons.z     = !!(gbaInput & KEY_R);
+				break;
 			case 3: // Mario Kart Double Dash
-			origin.buttons.a     = !!(gbaInput & KEY_A);
-			origin.buttons.b     = !!(gbaInput & KEY_B);
-			origin.buttons.start = !!(gbaInput & KEY_START);
-			origin.buttons.z     = !!(gbaInput & KEY_SELECT);
-			origin.buttons.x     = !!(gbaInput & KEY_L);
-			origin.buttons.r     = !!(gbaInput & KEY_R);
-			break;
+				origin.buttons.a     = !!(gbaInput & KEY_A);
+				origin.buttons.b     = !!(gbaInput & KEY_B);
+				origin.buttons.start = !!(gbaInput & KEY_START);
+				origin.buttons.z     = !!(gbaInput & KEY_SELECT);
+				origin.buttons.x     = !!(gbaInput & KEY_L);
+				origin.buttons.r     = !!(gbaInput & KEY_R);
+				break;
 			case 4: // Mario Kart 8 Deluxe
-			origin.buttons.a     = !!(gbaInput & KEY_A);
-			origin.buttons.b     = !!(gbaInput & KEY_B);
-			origin.buttons.start = !!(gbaInput & KEY_START);
-			origin.buttons.x     = !!(gbaInput & KEY_SELECT);
-			origin.buttons.l     = !!(gbaInput & KEY_L);
-			origin.buttons.r     = !!(gbaInput & KEY_R);
-			break;
+				origin.buttons.a     = !!(gbaInput & KEY_A);
+				origin.buttons.b     = !!(gbaInput & KEY_B);
+				origin.buttons.start = !!(gbaInput & KEY_START);
+				origin.buttons.x     = !!(gbaInput & KEY_SELECT);
+				origin.buttons.l     = !!(gbaInput & KEY_L);
+				origin.buttons.r     = !!(gbaInput & KEY_R);
+				break;
 			case 5: // New Super Mario Bros
-			origin.buttons.a     = !!(gbaInput & KEY_A);
-			origin.buttons.y     = !!(gbaInput & KEY_B);
-			origin.buttons.start = !!(gbaInput & KEY_START);
-			origin.buttons.b     = !!(gbaInput & KEY_SELECT);
-			origin.buttons.l     = !!(gbaInput & KEY_L);
-			origin.buttons.r     = !!(gbaInput & KEY_R);
-			break;
+				origin.buttons.a     = !!(gbaInput & KEY_A);
+				origin.buttons.y     = !!(gbaInput & KEY_B);
+				origin.buttons.start = !!(gbaInput & KEY_START);
+				origin.buttons.b     = !!(gbaInput & KEY_SELECT);
+				origin.buttons.l     = !!(gbaInput & KEY_L);
+				origin.buttons.r     = !!(gbaInput & KEY_R);
+				break;
 			case 6: // Mario Kart Wii
-			origin.buttons.a     = !!(gbaInput & KEY_A);
-			origin.buttons.up    = !!(gbaInput & KEY_B);
-			origin.buttons.start = !!(gbaInput & KEY_START);
-			origin.buttons.x     = !!(gbaInput & KEY_SELECT);
-			origin.buttons.l     = !!(gbaInput & KEY_L);
-			origin.buttons.b     = !!(gbaInput & KEY_R);
-			origin.buttons.down  = !!(gbaInput & KEY_DOWN);
-			break;
+				origin.buttons.a     = !!(gbaInput & KEY_A);
+				origin.buttons.up    = !!(gbaInput & KEY_B);
+				origin.buttons.start = !!(gbaInput & KEY_START);
+				origin.buttons.x     = !!(gbaInput & KEY_SELECT);
+				origin.buttons.l     = !!(gbaInput & KEY_L);
+				origin.buttons.b     = !!(gbaInput & KEY_R);
+				origin.buttons.down  = !!(gbaInput & KEY_DOWN);
+				break;
 			case 0: // Custom profile
-			nProfileIterationGbaKey = 5;
-			while (nProfileIterationGbaKey >= 0) {
-				switch (nProfileIterationGbaKey) {
-					case ID_GBAKEY_A:
-					nProfileIterationGbaButtonState = !!(gbaInput & KEY_A);
-					break;
-					case ID_GBAKEY_B:
-					nProfileIterationGbaButtonState = !!(gbaInput & KEY_B);
-					break;
-					case ID_GBAKEY_START:
-					nProfileIterationGbaButtonState = !!(gbaInput & KEY_START);
-					break;
-					case ID_GBAKEY_SELECT:
-					nProfileIterationGbaButtonState = !!(gbaInput & KEY_SELECT);
-					break;
-					case ID_GBAKEY_L:
-					nProfileIterationGbaButtonState = !!(gbaInput & KEY_L);
-					break;
-					case ID_GBAKEY_R:
-					nProfileIterationGbaButtonState = !!(gbaInput & KEY_R);
-					break;
+				nProfileIterationGbaKey = 5;
+				while (nProfileIterationGbaKey >= 0) {
+					switch (nProfileIterationGbaKey) {
+						case ID_GBAKEY_A:
+						nProfileIterationGbaButtonState = !!(gbaInput & KEY_A);
+						break;
+						case ID_GBAKEY_B:
+						nProfileIterationGbaButtonState = !!(gbaInput & KEY_B);
+						break;
+						case ID_GBAKEY_START:
+						nProfileIterationGbaButtonState = !!(gbaInput & KEY_START);
+						break;
+						case ID_GBAKEY_SELECT:
+						nProfileIterationGbaButtonState = !!(gbaInput & KEY_SELECT);
+						break;
+						case ID_GBAKEY_L:
+						nProfileIterationGbaButtonState = !!(gbaInput & KEY_L);
+						break;
+						case ID_GBAKEY_R:
+						nProfileIterationGbaButtonState = !!(gbaInput & KEY_R);
+						break;
+					}
+					switch (aCustomGameProfileConfig[nProfileIterationGbaKey]) {
+						case ID_GCPAD_A:
+						origin.buttons.a = nProfileIterationGbaButtonState;
+						break;
+						case ID_GCPAD_B:
+						origin.buttons.b = nProfileIterationGbaButtonState;
+						break;
+						case ID_GCPAD_X:
+						origin.buttons.x = nProfileIterationGbaButtonState;
+						break;
+						case ID_GCPAD_Y:
+						origin.buttons.y = nProfileIterationGbaButtonState;
+						break;
+						case ID_GCPAD_START:
+						origin.buttons.start = nProfileIterationGbaButtonState;
+						break;
+						case ID_GCPAD_Z:
+						origin.buttons.z = nProfileIterationGbaButtonState;
+						break;
+						case ID_GCPAD_L:
+						origin.buttons.l = nProfileIterationGbaButtonState;
+						break;
+						case ID_GCPAD_R:
+						origin.buttons.r = nProfileIterationGbaButtonState;
+						break;
+						case ID_GCPAD_UP:
+						origin.buttons.up = nProfileIterationGbaButtonState;
+						break;
+						case ID_GCPAD_DOWN:
+						origin.buttons.down = nProfileIterationGbaButtonState;
+						break;
+						case ID_GCPAD_LEFT:
+						origin.buttons.left = nProfileIterationGbaButtonState;
+						break;
+						case ID_GCPAD_RIGHT:
+						origin.buttons.right = nProfileIterationGbaButtonState;
+						break;
+					}
+					nProfileIterationGbaKey--;
 				}
-				switch (aCustomGameProfileConfig[nProfileIterationGbaKey]) {
-					case ID_GCPAD_A:
-					origin.buttons.a = nProfileIterationGbaButtonState;
-					break;
-					case ID_GCPAD_B:
-					origin.buttons.b = nProfileIterationGbaButtonState;
-					break;
-					case ID_GCPAD_X:
-					origin.buttons.x = nProfileIterationGbaButtonState;
-					break;
-					case ID_GCPAD_Y:
-					origin.buttons.y = nProfileIterationGbaButtonState;
-					break;
-					case ID_GCPAD_START:
-					origin.buttons.start = nProfileIterationGbaButtonState;
-					break;
-					case ID_GCPAD_Z:
-					origin.buttons.z = nProfileIterationGbaButtonState;
-					break;
-					case ID_GCPAD_L:
-					origin.buttons.l = nProfileIterationGbaButtonState;
-					break;
-					case ID_GCPAD_R:
-					origin.buttons.r = nProfileIterationGbaButtonState;
-					break;
-					case ID_GCPAD_UP:
-					origin.buttons.up = nProfileIterationGbaButtonState;
-					break;
-					case ID_GCPAD_DOWN:
-					origin.buttons.down = nProfileIterationGbaButtonState;
-					break;
-					case ID_GCPAD_LEFT:
-					origin.buttons.left = nProfileIterationGbaButtonState;
-					break;
-					case ID_GCPAD_RIGHT:
-					origin.buttons.right = nProfileIterationGbaButtonState;
-					break;
-				}
-				nProfileIterationGbaKey--;
-			}
-			break;
+				break;
 		}
+		
+		origin.buttons.unknown = 
+		id.status.unknown = origin.buttons.unknown;
+		
 		switch (buffer[0]) {
 			case CMD_RESET:
 				id.status.motor = MOTOR_STOP;
 			case CMD_ID:
 				if (nSiCmdLen == 9) {
 					if (hasMotor) {
-						id.type[0] = 0x09;
-						id.type[1] = 0x00;
+						id.type = 0x0900;
 					} else {
-						id.type[0] = 0x29;
-						id.type[1] = 0x00;
+						id.type = 0x2900;
 					}
 					SISetResponse(&id, sizeof(id) * 8);
 				}
