@@ -610,11 +610,11 @@ int main(void)
 	Halt();
 
 	while (!softReset) {
-		softReset = gbaInput == -1009; // Softreset A B START SELECT
 		nSiCmdLen = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
 		if (nSiCmdLen < 9) continue;
 
 		gbaInput = ~REG_KEYINPUT;
+		softReset = gbaInput == -1009; // Softreset A B START SELECT
 		switch (nGameProfile) {
 			case 1: // Default
 				origin.buttons.a     = !!(gbaInput & KEY_A);
