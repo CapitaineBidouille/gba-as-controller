@@ -634,9 +634,9 @@ int main(void)
 				break;
 			case 3: // Mario Kart Double Dash
 				origin.buttons.a     = !!(gbaInput & KEY_A);
-				origin.buttons.b     = !!(gbaInput & KEY_B);
+				origin.buttons.z     = !!(gbaInput & KEY_B);
 				origin.buttons.start = !!(gbaInput & KEY_START);
-				origin.buttons.z     = !!(gbaInput & KEY_SELECT);
+				origin.buttons.b     = !!(gbaInput & KEY_SELECT);
 				origin.buttons.x     = !!(gbaInput & KEY_L);
 				origin.buttons.r     = !!(gbaInput & KEY_R);
 				break;
