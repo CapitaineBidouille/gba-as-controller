@@ -325,7 +325,7 @@ static void showHeader() {
 	printf("\x1b[2J"); // clear the screen
 	printf("\n=== GBA AS NGC CONTROLLER ===");
 	printf("\nCreated by Extremscorner.org");
-	printf("\nModified by Azlino (06-02-21)\n");
+	printf("\nModified by Azlino (07-02-21)\n");
 }
 
 static int getPressedButtonsNumber() {
@@ -658,11 +658,11 @@ int main(void)
 				break;
 			case 6: // Mario Kart Wii
 				origin.buttons.a     = !!(gbaInput & KEY_A);
-				origin.buttons.up    = !!(gbaInput & KEY_B);
+				origin.buttons.x     = !!(gbaInput & KEY_B);
 				origin.buttons.start = !!(gbaInput & KEY_START);
-				origin.buttons.x     = !!(gbaInput & KEY_SELECT);
 				origin.buttons.l     = !!(gbaInput & KEY_L);
 				origin.buttons.b     = !!(gbaInput & KEY_R);
+				origin.buttons.up    = !!(gbaInput & KEY_UP);
 				origin.buttons.down  = !!(gbaInput & KEY_DOWN);
 				break;
 			case 0: // Custom profile
