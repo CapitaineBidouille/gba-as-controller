@@ -610,6 +610,7 @@ int main(void)
 	Halt();
 
 	while (!softReset) {
+		softReset = gbaInput == -1009; // Softreset A B START SELECT
 		nSiCmdLen = SIGetCommand(buffer, sizeof(buffer) * 8 + 1);
 		if (nSiCmdLen < 9) continue;
 
@@ -814,11 +815,8 @@ int main(void)
 				}
 				break;
 		}
-		set_motor(id.status.motor == MOTOR_RUMBLE);
-		if (gbaInput == -1009) {
-			// Softreset A B START SELECT
-			softReset = true;
-			
+		set_motor(!softReset && id.status.motor == MOTOR_RUMBLE);
+		if (softReset) {			
 			// Reset all inputs to initial state
 			// Fix key press not released when switching on a different profile
 			origin.buttons.get_origin = 0;
