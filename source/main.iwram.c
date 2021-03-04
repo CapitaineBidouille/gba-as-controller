@@ -128,6 +128,7 @@ static enum {
 	RUMBLE_GBA,
 	RUMBLE_NDS,
 	RUMBLE_NDS_SLIDE,
+	RUMBLE_EZFLASH_OMEGA_DE,
 } rumble;
 
 static bool has_motor(void) {
@@ -147,6 +148,9 @@ static bool has_motor(void) {
 				case 'R':
 				case 'V':
 					rumble = RUMBLE_GBA;
+					return true;
+				case 'G':
+					rumble = RUMBLE_EZFLASH_OMEGA_DE;
 					return true;
 			}
 			break;
@@ -171,6 +175,14 @@ static void set_motor(bool enable) {
 			break;
 		case RUMBLE_NDS_SLIDE:
 			*ROM = enable << 8;
+			break;
+			
+		case RUMBLE_EZFLASH_OMEGA_DE:
+			if(enable) {
+				ROM_GPIODATA = ROM_GPIODATA | 8;
+			} else {
+				ROM_GPIODATA = ROM_GPIODATA & ~8;
+			}
 			break;
 	}
 }
@@ -319,7 +331,7 @@ static void showHeader() {
 	printf("\x1b[2J"); // clear the screen
 	printf("\n=== GBA AS N64 CONTROLLER ===");
 	printf("\nCreated by Extremscorner.org");
-	printf("\nModified by Azlino (06-02-21)\n");
+	printf("\nModified by Azlino (04-03-21)\n");
 }
 
 static int getPressedButtonsNumber() {
