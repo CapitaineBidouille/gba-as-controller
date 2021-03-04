@@ -131,6 +131,34 @@ static enum {
 	RUMBLE_EZFLASH_OMEGA_DE,
 } rumble;
 
+#define EZFLASHOMEGADE_FlashBase_S71		(void*)0x08000000
+#define EZFLASHOMEGADE_SET_info_offset 0x7B0000
+#define EZFLASHOMEGADE_assress_led_open_sel 16
+#define EZFLASHOMEGADE_assress_saveMODE 64
+
+static inline u16 IWRAM_CODE EZFLASHOMEGADE_Read_SET_info(u32 offset)
+{
+	return *((vu16 *)(EZFLASHOMEGADE_FlashBase_S71+EZFLASHOMEGADE_SET_info_offset+offset*2));
+}
+
+static inline void EZFLASHOMEGADE_SetROMPage( const u16 _page ) {
+  *( vu16 * )0x9fe0000 = 0xd200;
+  *( vu16 * )0x8000000 = 0x1500;
+  *( vu16 * )0x8020000 = 0xd200;
+  *( vu16 * )0x8040000 = 0x1500;
+  *( vu16 * )0x9880000 = _page;
+  *( vu16 * )0x9fc0000 = 0x1500;
+}
+
+static bool isEzFlashOmegaDefinitiveEdition() {
+	EZFLASHOMEGADE_SetROMPage( 0x8002 ); // Change to kernel mode
+	u16 ledOpenOption = EZFLASHOMEGADE_Read_SET_info(EZFLASHOMEGADE_assress_led_open_sel);
+	u16 norSaveMode = EZFLASHOMEGADE_Read_SET_info(EZFLASHOMEGADE_assress_saveMODE); // Prevent detection of non definitive edition omegas...
+	bool isEzFlashOmegaDefinitiveEdition = (ledOpenOption == 0 || ledOpenOption == 1) && norSaveMode != 65535;
+	EZFLASHOMEGADE_SetROMPage( 0x200 ); // Return to original mode
+	return isEzFlashOmegaDefinitiveEdition;
+}
+
 static bool has_motor(void) {
 	switch (ROM[0x59]) {
 		case 0x59:
@@ -149,11 +177,12 @@ static bool has_motor(void) {
 				case 'V':
 					rumble = RUMBLE_GBA;
 					return true;
-				case 'G':
-					rumble = RUMBLE_EZFLASH_OMEGA_DE;
-					return true;
 			}
 			break;
+	}
+	if (isEzFlashOmegaDefinitiveEdition()) {
+		rumble = RUMBLE_EZFLASH_OMEGA_DE;
+		return true;
 	}
 	rumble = RUMBLE_NONE;
 	return false;
@@ -331,7 +360,7 @@ static void showHeader() {
 	printf("\x1b[2J"); // clear the screen
 	printf("\n=== GBA AS N64 CONTROLLER ===");
 	printf("\nCreated by Extremscorner.org");
-	printf("\nModified by Azlino (04-03-21)\n");
+	printf("\nModified by Azlino (05-03-21)\n");
 }
 
 static int getPressedButtonsNumber() {
